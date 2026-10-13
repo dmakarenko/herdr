@@ -34,6 +34,9 @@ local nixInputs = List(
   "vendor/**"
 )
 
+// Git exports GIT_DIR and similar vars to hooks, so test fixtures that run git would change this repo.
+local function isolated(command: String): String = "unset $(git rev-parse --local-env-vars) && \(command)"
+
 hooks {
   ["pre-commit"] {
     fix = false
@@ -62,26 +65,26 @@ hooks {
       }
       // The macOS job of the CI workflow, with its test filter.
       ["ci"] {
-        check = "just ci 'not binary(live_handoff)'"
+        check = isolated("just ci 'not binary(live_handoff)'")
       }
       ["docs-contract"] {
-        check = "just docs-contract-test"
+        check = isolated("just docs-contract-test")
       }
       ["distribution-contract"] {
         glob = distributionInputs
-        check = """
+        check = isolated("""
           python3 scripts/agent_detection_manifest_check.py --require-published \
           && python3 scripts/config_reference_check.py \
           && python3 scripts/docs_translation_parity.py --docs-root docs/next/website/src/content/docs \
           && node scripts/docs/versions.mjs check \
           && node scripts/docs/preview.mjs check \
           && python3 -m unittest scripts.test_agent_detection_manifest_check scripts.test_config_reference_check scripts.test_docs_translation_parity scripts.test_preview
-          """
+          """)
       }
       ["nix-flake"] {
         profiles = List("slow")
         glob = nixInputs
-        check = "nix flake check --print-build-logs && nix flake check --all-systems --no-build --print-build-logs"
+        check = isolated("nix flake check --print-build-logs && nix flake check --all-systems --no-build --print-build-logs")
       }
       // The Linux-only CI step for libghostty runtime safety.
       ["libghostty-scalar-safety"] {
@@ -93,7 +96,7 @@ hooks {
           // A separate target dir keeps the scalar build from evicting the normal ghostty-vt build.
           ["CARGO_TARGET_DIR"] = "target/scalar-safety"
         }
-        check = "cargo nextest run --locked -E 'package(ghostty-vt) | test(ghostty)' --status-level fail --final-status-level fail --failure-output final --success-output never"
+        check = isolated("cargo nextest run --locked -E 'package(ghostty-vt) | test(ghostty)' --status-level fail --final-status-level fail --failure-output final --success-output never")
       }
     }
   }
