@@ -266,18 +266,31 @@ fn set_sigpipe_disposition(handler: libc::sighandler_t) {
 
 extern "C" fn discard_signal(_signal: libc::c_int) {}
 
-/// The server must outlive the terminal or shell that launched it, like tmux.
-/// Installed at process start so SIGHUP cannot stop the server before its event
-/// loop runs. A handler, unlike SIG_IGN, resets to the default on exec, so
-/// child processes keep normal hangup behavior.
-pub(crate) fn ignore_server_hangup() {
+static HELD_QUIT_SIGNAL: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
+extern "C" fn hold_quit_signal(signal: libc::c_int) {
+    HELD_QUIT_SIGNAL.store(signal, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn set_server_signal_handler(signal: libc::c_int, handler: extern "C" fn(libc::c_int)) {
     let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
-    action.sa_sigaction = discard_signal as extern "C" fn(libc::c_int) as libc::sighandler_t;
+    action.sa_sigaction = handler as libc::sighandler_t;
     action.sa_flags = libc::SA_RESTART;
     unsafe {
         libc::sigemptyset(&mut action.sa_mask);
-        libc::sigaction(libc::SIGHUP, &action, std::ptr::null_mut());
+        libc::sigaction(signal, &action, std::ptr::null_mut());
     }
+}
+
+/// The server must outlive the terminal or shell that launched it, like tmux.
+/// Installed at process start so SIGHUP cannot stop the server, and SIGINT or
+/// SIGTERM wait for the signal monitor, before its event loop runs. A handler,
+/// unlike SIG_IGN, resets to the default on exec, so child processes keep
+/// normal signal behavior.
+pub(crate) fn hold_server_signals() {
+    set_server_signal_handler(libc::SIGHUP, discard_signal);
+    set_server_signal_handler(libc::SIGINT, hold_quit_signal);
+    set_server_signal_handler(libc::SIGTERM, hold_quit_signal);
 }
 
 /// Routes SIGINT and SIGTERM to `on_quit`, and logs SIGHUP without stopping.
@@ -313,6 +326,11 @@ pub(crate) fn spawn_server_signal_monitor(
             });
         }
         Err(err) => warn!(%err, "failed to install SIGHUP handler"),
+    }
+    match HELD_QUIT_SIGNAL.swap(0, std::sync::atomic::Ordering::Relaxed) {
+        libc::SIGINT => on_quit(super::ServerQuitSignal::Interrupt),
+        libc::SIGTERM => on_quit(super::ServerQuitSignal::Terminate),
+        _ => {}
     }
 }
 
@@ -580,6 +598,28 @@ mod tests {
             assert!(rx.try_recv().is_err());
 
             assert_eq!(unsafe { libc::kill(libc::getpid(), libc::SIGTERM) }, 0);
+            let signal = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+                .await
+                .unwrap();
+            assert_eq!(signal, Some(super::super::ServerQuitSignal::Terminate));
+        });
+    }
+
+    #[test]
+    fn server_signal_monitor_reports_terminate_received_before_it_started() {
+        hold_server_signals();
+        // The API socket is live before the monitor exists, so a client can stop the server here.
+        assert_eq!(unsafe { libc::kill(libc::getpid(), libc::SIGTERM) }, 0);
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            spawn_server_signal_monitor(move |signal| {
+                let _ = tx.send(signal);
+            });
             let signal = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
                 .await
                 .unwrap();

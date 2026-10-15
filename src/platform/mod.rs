@@ -90,7 +90,7 @@ pub(crate) fn spawn_server_signal_monitor(
 }
 
 #[cfg(not(unix))]
-pub(crate) fn ignore_server_hangup() {}
+pub(crate) fn hold_server_signals() {}
 
 #[cfg(not(unix))]
 pub(crate) fn local_stream_peer_description(_stream: &crate::ipc::LocalStream) -> Option<String> {
@@ -386,7 +386,7 @@ mod unix_common;
 pub(crate) mod unix_image_files;
 #[cfg(unix)]
 pub(crate) use unix_common::{
-    begin_cli_output, end_cli_output, forward_remote_bridge_stdio, ignore_server_hangup,
+    begin_cli_output, end_cli_output, forward_remote_bridge_stdio, hold_server_signals,
     local_stream_peer_description, spawn_server_signal_monitor, RemoteBridgeWake,
 };
 
