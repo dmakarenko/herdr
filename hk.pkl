@@ -34,8 +34,8 @@ local nixInputs = List(
   "vendor/**"
 )
 
-// Git exports GIT_DIR and similar vars to hooks, so test fixtures that run git would change this repo.
-local function isolated(command: String): String = "unset $(git rev-parse --local-env-vars) && \(command)"
+// Test fixtures run git, so they must not see this repo (hook GIT_* vars) or the user's git config, as in CI.
+local function isolated(command: String): String = "unset $(git rev-parse --local-env-vars) && GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \(command)"
 
 hooks {
   ["pre-commit"] {
