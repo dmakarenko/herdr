@@ -65,6 +65,8 @@ hooks {
       }
       // The macOS job of the CI workflow, with its test filter.
       ["ci"] {
+        // Timing-sensitive server tests fail when 18 run at once on a shared Mac; CI runners have about 3 cores.
+        env { ["NEXTEST_TEST_THREADS"] = "6" }
         check = isolated("just ci 'not binary(live_handoff)'")
       }
       ["distribution-contract"] {
