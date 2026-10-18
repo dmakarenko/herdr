@@ -47,6 +47,10 @@ hooks {
       ["upstream-pre-commit"] {
         check = ".githooks/pre-commit"
       }
+      ["fork-hook-tests"] {
+        glob = "hooks/**"
+        check = "python3 -m unittest discover -s hooks"
+      }
     }
   }
   ["commit-msg"] {
@@ -63,8 +67,13 @@ hooks {
       ["clean-tree"] {
         check = #"test -z "$(git status --porcelain)" || { echo "commit or stash local changes before push"; git status --short; exit 1; }"#
       }
+      // Timing-sensitive tests fail when other sessions saturate the CPUs, so the run starts only at low load.
+      ["low-load"] {
+        check = "hooks/wait_for_low_load.py"
+      }
       // The macOS job of the CI workflow, with its test filter.
       ["ci"] {
+        depends = "low-load"
         // Timing-sensitive server tests fail when 18 run at once on a shared Mac; CI runners have about 3 cores.
         env { ["NEXTEST_TEST_THREADS"] = "6" }
         check = isolated("just ci 'not binary(live_handoff)'")
