@@ -1611,6 +1611,73 @@ fn navigator_scale_snapshot(workspaces: usize, tabs: usize, panes: usize) -> Cli
     result
 }
 
+/// One pane in ten matches "api", every odd pane runs an agent, and panes share seven cwds.
+fn navigator_populated_snapshot(
+    workspaces: usize,
+    tabs: usize,
+    panes: usize,
+) -> ClientShellSnapshot {
+    let mut result = navigator_scale_snapshot(workspaces, tabs, panes);
+    for (index, pane) in result.panes.iter_mut().enumerate() {
+        pane.cwd = Some(format!("/Users/dev/projects/repo-{}", index % 7));
+        if index % 10 == 0 {
+            pane.label = Some(format!("api server {index}"));
+        }
+        if index % 2 == 1 {
+            let mut agent =
+                super::endpoints::agent(&format!("agent {index}"), AgentStatus::Idle, index as u64);
+            agent.pane_id = pane.pane_id.clone();
+            agent.workspace_id = pane.workspace_id.clone();
+            agent.tab_id = pane.tab_id.clone();
+            agent.title = Some(format!("task {index}"));
+            agent.focused = pane.focused;
+            result.agents.push(agent);
+        }
+    }
+    result
+}
+
+fn navigator_populated_state(workspaces: usize, tabs: usize, panes: usize) -> ClientShellState {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(navigator_populated_snapshot(
+        workspaces, tabs, panes,
+    )));
+    let mut pane_surface = surface();
+    pane_surface.panes[0].pane_id = "pane_0_0_0".into();
+    state.set_pane_surface(pane_surface);
+    state
+}
+
+#[test]
+fn navigator_rows_build_count() {
+    use super::super::aggregate_navigation::take_navigator_rows_builds;
+    let mut state = navigator_populated_state(25, 2, 5);
+    state.open_navigator_overlay();
+    let press = |state: &mut ClientShellState, code| {
+        state.handle_raw_events(vec![RawInputEvent::Key(crate::input::TerminalKey::new(
+            code,
+            KeyModifiers::empty(),
+        ))]);
+    };
+    press(&mut state, KeyCode::Char('/'));
+    take_navigator_rows_builds();
+
+    press(&mut state, KeyCode::Char('a'));
+    let keystroke = take_navigator_rows_builds();
+    state.compose(106, 30).expect("navigator frame");
+    let render = take_navigator_rows_builds();
+
+    let Some(ClientShellOverlay::Navigator(navigator)) = &state.overlay else {
+        panic!("navigator");
+    };
+    assert_eq!(navigator.query.as_str(), "a");
+    assert_eq!(
+        (keystroke, render),
+        (0, 1),
+        "(keystroke, render) row builds"
+    );
+}
+
 #[test]
 fn navigator_grouping_keeps_snapshot_order_with_interleaved_tabs_and_panes() {
     let mut snapshot = navigator_scale_snapshot(2, 2, 2);
@@ -1703,6 +1770,51 @@ fn navigator_render_scale_profile() {
             eprintln!(
                 "navigator: {workspaces}x{tabs}x{panes}, query={query:?}, {:.1} us/frame",
                 start.elapsed().as_secs_f64() * 1000.0
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "manual navigator row-build scaling profile"]
+fn navigator_rows_build_profile() {
+    use std::time::{Duration, Instant};
+    for (workspaces, tabs, panes) in [(1, 1, 1), (25, 2, 5)] {
+        let mut state = navigator_populated_state(workspaces, tabs, panes);
+        state.open_navigator_overlay();
+        for query in ["", "api"] {
+            let Some(ClientShellOverlay::Navigator(navigator)) = state.overlay.as_mut() else {
+                panic!("navigator");
+            };
+            navigator.query = query.into();
+            let build = || {
+                std::hint::black_box(render::client_navigator_rows(
+                    &state.endpoints,
+                    &state.active_endpoint_id,
+                    navigator,
+                ))
+            };
+            let rows = build().len();
+            for _ in 0..32 {
+                build();
+            }
+            let mut samples = Vec::new();
+            for _ in 0..7 {
+                let start = Instant::now();
+                let mut iterations = 0;
+                while start.elapsed() < Duration::from_millis(20) {
+                    build();
+                    iterations += 1;
+                }
+                samples.push(start.elapsed().as_secs_f64() * 1e6 / f64::from(iterations));
+            }
+            samples.sort_by(f64::total_cmp);
+            eprintln!(
+                "navigator rows: panes={} query={query:?} rows={rows} median={:.2} us min={:.2} max={:.2}",
+                workspaces * tabs * panes,
+                samples[3],
+                samples[0],
+                samples[6],
             );
         }
     }

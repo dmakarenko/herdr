@@ -92,6 +92,10 @@ build:
 bench-render-scale:
     cargo test --release --locked --bin herdr render_scale_profile -- --ignored --nocapture --test-threads=1
 
+# Profile Go to row building with 1 and 250 populated panes, with and without a query.
+bench-navigator:
+    cargo test --release --locked --bin herdr navigator_rows_build_profile -- --ignored --nocapture --test-threads=1
+
 # Profile terminal target name resolution at increasing pane counts.
 bench-terminal-targets:
     cargo test --release --locked --bin herdr terminal_target_lookup_profile -- --ignored --nocapture --test-threads=1
