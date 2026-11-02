@@ -275,11 +275,24 @@ pub(super) fn online_agent_targets(
         .collect()
 }
 
+#[cfg(test)]
+thread_local! {
+    static NAVIGATOR_ROWS_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Returns the `navigator_rows` calls on this thread since the last call, and resets the count.
+#[cfg(test)]
+pub(super) fn take_navigator_rows_builds() -> usize {
+    NAVIGATOR_ROWS_BUILDS.with(|builds| builds.replace(0))
+}
+
 pub(super) fn navigator_rows(
     endpoints: &[ClientShellEndpoint],
     active_endpoint_id: &ClientEndpointId,
     navigator: &ClientNavigatorOverlay,
 ) -> Vec<ClientNavigatorRow> {
+    #[cfg(test)]
+    NAVIGATOR_ROWS_BUILDS.with(|builds| builds.set(builds.get() + 1));
     let query = navigator.query.trim().to_lowercase();
     let filter = |status| match navigator.filter {
         Some(ClientNavigatorFilter::Blocked) => status == crate::api::schema::AgentStatus::Blocked,

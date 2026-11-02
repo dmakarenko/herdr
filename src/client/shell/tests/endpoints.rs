@@ -17,7 +17,7 @@ fn remote_profile() -> SavedSshEndpoint {
     }
 }
 
-fn agent(
+pub(super) fn agent(
     name: &str,
     status: crate::api::schema::AgentStatus,
     state_change_seq: u64,
