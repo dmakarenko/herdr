@@ -1619,7 +1619,9 @@ fn navigator_populated_snapshot(
 ) -> ClientShellSnapshot {
     let mut result = navigator_scale_snapshot(workspaces, tabs, panes);
     for (index, pane) in result.panes.iter_mut().enumerate() {
-        pane.cwd = Some(format!("/Users/dev/projects/repo-{}", index % 7));
+        let cwd = format!("/Users/dev/projects/repo-{}", index % 7);
+        pane.foreground_cwd = Some(cwd.clone());
+        pane.cwd = Some(cwd);
         if index % 10 == 0 {
             pane.label = Some(format!("api server {index}"));
         }
