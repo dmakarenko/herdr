@@ -1691,6 +1691,15 @@ async fn overlapping_layout_and_us_keys_release_exactly() {
     }
 }
 
+/// Opens Go to and leaves its search, so `/` has to enter the search again.
+#[cfg(unix)]
+fn open_navigator_list(herdr: &mut HerdrPath) {
+    herdr.state.open_navigator_overlay();
+    if let Some(ClientShellOverlay::Navigator(navigator)) = herdr.state.overlay.as_mut() {
+        navigator.search_focused = false;
+    }
+}
+
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn goto_search_opens_on_shifted_slash_from_a_report_all_pane() {
@@ -1703,7 +1712,7 @@ async fn goto_search_opens_on_shifted_slash_from_a_report_all_pane() {
         (b"\x1b[>31u", b"\x1b[55:47;2;47u", b"\x1b[55:47;2:3u"),
     ] {
         let mut herdr = HerdrPath::new(HostProfile::Kitty, pane_mode);
-        herdr.state.open_navigator_overlay();
+        open_navigator_list(&mut herdr);
         assert_eq!(herdr.feed(press), None, "{}", show(pane_mode));
         assert_eq!(herdr.feed(release), None, "{}", show(pane_mode));
         assert!(
@@ -1736,7 +1745,7 @@ async fn goto_search_opens_only_for_a_typed_slash() {
         (b"", b"\x1b/", false),
     ] {
         let mut herdr = HerdrPath::new(HostProfile::Kitty, pane_mode);
-        herdr.state.open_navigator_overlay();
+        open_navigator_list(&mut herdr);
         let _ = herdr.feed(press);
         let focused = matches!(
             &herdr.state.overlay,
