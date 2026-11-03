@@ -216,3 +216,26 @@ fn navigator_selection_unique_when_target_repeats() {
         assert_eq!(navigator_selected_index(&rows, navigator), Some(index));
     }
 }
+
+#[test]
+fn navigator_tab_row_matches_its_shown_label() {
+    let mut snapshot = navigator_scale_snapshot(2, 2, 1);
+    for tab in &mut snapshot.tabs {
+        tab.label = tab.number.to_string();
+        tab.custom_label = false;
+    }
+    snapshot.tabs.retain(|tab| tab.tab_id != "tab_1_1");
+    snapshot.panes.retain(|pane| pane.tab_id != "tab_1_1");
+    let mut state = navigator_state(snapshot);
+    assert_eq!(rows(&state)[1].label, "tab 1");
+
+    state.handle_input_bytes(b"tab 2");
+    let filtered = rows(&state)
+        .into_iter()
+        .map(|row| row.target)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        filtered,
+        [workspace("workspace_0"), tab("tab_0_1"), pane("pane_0_1_0")]
+    );
+}

@@ -352,9 +352,14 @@ pub(super) fn navigator_rows(
                     .unwrap_or_default();
                 let multiple_tabs = workspace_tabs.len() > 1;
                 for tab in workspace_tabs {
-                    let tab_matches = workspace_matches || text(&tab.label);
                     let tab_name = (tab.custom_label || tab.label.parse::<usize>().is_err())
                         .then_some(tab.label.as_str());
+                    let tab_row_label = multiple_tabs.then(|| {
+                        tab_name.map_or_else(|| format!("tab {}", tab.label), str::to_owned)
+                    });
+                    let tab_matches = workspace_matches
+                        || text(&tab.label)
+                        || tab_row_label.as_deref().is_some_and(text);
                     let mut tab_children = Vec::new();
                     let tab_panes = panes_by_tab
                         .get(tab.tab_id.as_str())
@@ -440,8 +445,7 @@ pub(super) fn navigator_rows(
                     {
                         children.push(ClientNavigatorRow {
                             depth: 1 + depth_offset,
-                            label: tab_name
-                                .map_or_else(|| format!("tab {}", tab.label), str::to_owned),
+                            label: tab_row_label.unwrap_or_default(),
                             meta: String::new(),
                             detail: format!("{} / {}", workspace.label, tab.label),
                             agent: None,
