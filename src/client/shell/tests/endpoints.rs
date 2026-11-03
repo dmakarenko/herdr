@@ -2343,15 +2343,17 @@ fn navigator_uses_machine_parents_only_for_federated_clients() {
     assert!(rows.iter().all(|row| match row.target {
         ClientNavigatorTarget::Machine { .. } => row.depth == 0 && row.status.is_none(),
         ClientNavigatorTarget::Workspace { .. } => row.depth == 1 && row.status.is_none(),
+        ClientNavigatorTarget::Tab { .. } => false,
         ClientNavigatorTarget::Pane { .. } => row.depth == 2 && row.status.is_some(),
     }));
     assert_eq!(rows.iter().filter(|row| row.current).count(), 1);
 
     let frame = state.compose(106, 30).expect("federated navigator");
-    for (rect, target) in &state.hits.navigator_rows {
+    for (rect, target, _) in &state.hits.navigator_rows {
         let expected = match target {
             ClientNavigatorTarget::Machine { .. } => " ",
             ClientNavigatorTarget::Workspace { .. } => "   ",
+            ClientNavigatorTarget::Tab { .. } => panic!("one-tab workspaces have no tab rows"),
             ClientNavigatorTarget::Pane { .. } => "   └─ ",
         };
         let prefix = frame.cells[rect.y as usize * frame.width as usize + rect.x as usize..]
@@ -2391,7 +2393,7 @@ fn navigator_uses_machine_parents_only_for_federated_clients() {
     assert!(rows.iter().all(|row| match row.target {
         ClientNavigatorTarget::Workspace { .. } => row.depth == 0,
         ClientNavigatorTarget::Pane { .. } => row.depth == 1,
-        ClientNavigatorTarget::Machine { .. } => false,
+        ClientNavigatorTarget::Tab { .. } | ClientNavigatorTarget::Machine { .. } => false,
     }));
 }
 
@@ -2424,6 +2426,10 @@ fn navigator_keeps_saved_machine_visible_before_metadata_arrives() {
     assert!(!rows.iter().any(|row| match &row.target {
         ClientNavigatorTarget::Machine { .. } => false,
         ClientNavigatorTarget::Workspace {
+            endpoint_id: target,
+            ..
+        }
+        | ClientNavigatorTarget::Tab {
             endpoint_id: target,
             ..
         }
@@ -2780,6 +2786,10 @@ fn collapsed_aggregate_workspace_status_uses_its_status_color() {
 fn navigator_workspace_arrows_cross_machine_headings_without_activating_them() {
     let (mut state, endpoint_id) = state_with_remote();
     state.open_navigator_overlay();
+    state.handle_raw_events(vec![RawInputEvent::Key(crate::input::TerminalKey::new(
+        KeyCode::Esc,
+        KeyModifiers::empty(),
+    ))]);
     for (key, expected_endpoint) in [
         (KeyCode::Right, endpoint_id),
         (KeyCode::Left, ClientEndpointId::Local),

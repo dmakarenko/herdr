@@ -193,17 +193,17 @@ impl ClientShellState {
     pub(super) fn open_navigator_overlay(&mut self) {
         let mut navigator = ClientNavigatorOverlay {
             query: TextEditor::default(),
-            search_focused: false,
+            search_focused: true,
             selected: None,
+            selected_row: 0,
             scroll: 0,
             filter: None,
         };
         let rows =
             render::client_navigator_rows(&self.endpoints, &self.active_endpoint_id, &navigator);
-        navigator.selected = rows
-            .iter()
-            .find(|row| row.current)
-            .map(|row| row.target.clone());
+        if let Some(current) = rows.iter().position(|row| row.current) {
+            super::aggregate_navigation::select_navigator_row(&mut navigator, &rows, current);
+        }
         self.overlay = Some(ClientShellOverlay::Navigator(navigator));
     }
 
@@ -221,7 +221,7 @@ impl ClientShellState {
             super::aggregate_navigation::navigator_selected_index(&rows, navigator).unwrap_or(0);
         let next =
             (selected as isize + delta).clamp(0, rows.len().saturating_sub(1) as isize) as usize;
-        navigator.selected = Some(rows[next].target.clone());
+        super::aggregate_navigation::select_navigator_row(navigator, &rows, next);
     }
 
     pub(super) fn scroll_navigator_to(&mut self, scroll: usize, viewport_rows: usize) {
@@ -236,7 +236,7 @@ impl ClientShellState {
             super::aggregate_navigation::navigator_selected_index(&rows, navigator).unwrap_or(0);
         // Keep the selection in the dragged viewport so rendering does not snap back to it.
         let selected = selected.clamp(navigator.scroll, navigator.scroll + viewport_rows - 1);
-        navigator.selected = rows.get(selected).map(|row| row.target.clone());
+        super::aggregate_navigation::select_navigator_row(navigator, &rows, selected);
     }
 
     fn move_navigator_workspace(&mut self, forward: bool) {
@@ -250,26 +250,42 @@ impl ClientShellState {
         else {
             return;
         };
+        let section_head = |row: &ClientNavigatorRow| {
+            matches!(
+                row.target,
+                ClientNavigatorTarget::Workspace { .. } | ClientNavigatorTarget::Machine { .. }
+            )
+        };
         let section = rows[..=selected]
             .iter()
-            .rposition(|row| !matches!(row.target, ClientNavigatorTarget::Pane { .. }))
+            .rposition(section_head)
             .unwrap_or(selected);
-        let mut destinations = rows.windows(2).enumerate().filter(|(index, pair)| {
-            matches!(pair[0].target, ClientNavigatorTarget::Workspace { .. })
-                && matches!(pair[1].target, ClientNavigatorTarget::Pane { .. })
-                && if forward {
-                    *index > section
-                } else {
-                    *index < section
-                }
-        });
+        let first_pane = |workspace: usize| {
+            rows[workspace + 1..]
+                .iter()
+                .take_while(|row| !section_head(row))
+                .position(|row| matches!(row.target, ClientNavigatorTarget::Pane { .. }))
+                .map(|offset| workspace + 1 + offset)
+        };
+        let mut destinations = rows
+            .iter()
+            .enumerate()
+            .filter(|(index, row)| {
+                matches!(row.target, ClientNavigatorTarget::Workspace { .. })
+                    && if forward {
+                        *index > section
+                    } else {
+                        *index < section
+                    }
+            })
+            .filter_map(|(index, _)| first_pane(index));
         let destination = if forward {
             destinations.next()
         } else {
             destinations.next_back()
         };
-        if let Some((_, pair)) = destination {
-            navigator.selected = Some(pair[1].target.clone());
+        if let Some(destination) = destination {
+            super::aggregate_navigation::select_navigator_row(navigator, &rows, destination);
         }
     }
 
@@ -300,6 +316,12 @@ impl ClientShellState {
                 ClientEndpointFocusTarget::Workspace(workspace_id),
                 outcome,
             ),
+            ClientNavigatorTarget::Tab {
+                endpoint_id,
+                tab_id,
+            } => {
+                self.focus_or_activate(endpoint_id, ClientEndpointFocusTarget::Tab(tab_id), outcome)
+            }
             ClientNavigatorTarget::Pane {
                 endpoint_id,
                 pane_id,
@@ -702,18 +724,14 @@ impl ClientShellState {
                 return;
             }
             if matches!(code, KeyCode::End | KeyCode::Char('G')) && modifiers.is_empty() {
-                let last = self.overlay.as_ref().and_then(|overlay| match overlay {
-                    ClientShellOverlay::Navigator(navigator) => render::client_navigator_rows(
+                if let Some(ClientShellOverlay::Navigator(navigator)) = self.overlay.as_mut() {
+                    let rows = render::client_navigator_rows(
                         &self.endpoints,
                         &self.active_endpoint_id,
                         navigator,
-                    )
-                    .last()
-                    .map(|row| row.target.clone()),
-                    _ => None,
-                });
-                if let Some(ClientShellOverlay::Navigator(navigator)) = self.overlay.as_mut() {
-                    navigator.selected = last;
+                    );
+                    let last = rows.len().saturating_sub(1);
+                    super::aggregate_navigation::select_navigator_row(navigator, &rows, last);
                 }
                 outcome.repaint = true;
                 return;

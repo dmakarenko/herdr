@@ -353,6 +353,9 @@ pub(super) fn navigator_rows(
                 let multiple_tabs = workspace_tabs.len() > 1;
                 for tab in workspace_tabs {
                     let tab_matches = workspace_matches || text(&tab.label);
+                    let tab_name = (tab.custom_label || tab.label.parse::<usize>().is_err())
+                        .then_some(tab.label.as_str());
+                    let mut tab_children = Vec::new();
                     let tab_panes = panes_by_tab
                         .get(tab.tab_id.as_str())
                         .map(Vec::as_slice)
@@ -376,8 +379,6 @@ pub(super) fn navigator_rows(
                                 .as_deref()
                                 .or(agent.terminal_title_stripped.as_deref())
                         });
-                        let tab_name = (tab.custom_label || tab.label.parse::<usize>().is_err())
-                            .then_some(tab.label.as_str());
                         let label = if tab_panes.len() == 1 {
                             match name.or(tab_name).or(title) {
                                 Some(label) => label.to_owned(),
@@ -412,8 +413,8 @@ pub(super) fn navigator_rows(
                                     .is_some_and(text)
                                 || text(&pane.pane_id))
                         {
-                            children.push(ClientNavigatorRow {
-                                depth: 1 + depth_offset,
+                            tab_children.push(ClientNavigatorRow {
+                                depth: 1 + depth_offset + u8::from(multiple_tabs),
                                 label,
                                 meta: meta.to_owned(),
                                 detail: format!(
@@ -432,6 +433,28 @@ pub(super) fn navigator_rows(
                             });
                         }
                     }
+                    if multiple_tabs
+                        && (!filtering
+                            || !tab_children.is_empty()
+                            || (navigator.filter.is_none() && !query.is_empty() && tab_matches))
+                    {
+                        children.push(ClientNavigatorRow {
+                            depth: 1 + depth_offset,
+                            label: tab_name
+                                .map_or_else(|| format!("tab {}", tab.label), str::to_owned),
+                            meta: String::new(),
+                            detail: format!("{} / {}", workspace.label, tab.label),
+                            agent: None,
+                            status: None,
+                            stale,
+                            current: false,
+                            target: ClientNavigatorTarget::Tab {
+                                endpoint_id: endpoint.endpoint_id.clone(),
+                                tab_id: tab.tab_id.clone(),
+                            },
+                        });
+                    }
+                    children.extend(tab_children);
                 }
                 if !filtering
                     || !children.is_empty()
@@ -482,12 +505,28 @@ pub(super) fn navigator_selected_index(
     navigator: &ClientNavigatorOverlay,
 ) -> Option<usize> {
     match navigator.selected.as_ref() {
+        Some(target)
+            if rows
+                .get(navigator.selected_row)
+                .is_some_and(|row| row.target == *target) =>
+        {
+            Some(navigator.selected_row)
+        }
         Some(target) => rows.iter().position(|row| row.target == *target),
         None => rows
             .iter()
             .position(|row| matches!(row.target, ClientNavigatorTarget::Pane { .. }))
             .or_else(|| (!rows.is_empty()).then_some(0)),
     }
+}
+
+pub(super) fn select_navigator_row(
+    navigator: &mut ClientNavigatorOverlay,
+    rows: &[ClientNavigatorRow],
+    index: usize,
+) {
+    navigator.selected = rows.get(index).map(|row| row.target.clone());
+    navigator.selected_row = index;
 }
 
 pub(super) fn selected_navigator_target(
