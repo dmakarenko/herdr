@@ -120,7 +120,7 @@ pub(super) struct ShellHitMap {
     pub(super) overlay_cancel: Rect,
     pub(super) navigator_popup: Rect,
     pub(super) navigator_search: Rect,
-    pub(super) navigator_rows: Vec<(Rect, ClientNavigatorTarget)>,
+    pub(super) navigator_rows: Vec<(Rect, ClientNavigatorTarget, usize)>,
     pub(super) navigator_scrollbar: Rect,
     pub(super) navigator_scroll_metrics: Option<crate::pane::ScrollMetrics>,
     pub(super) worktree_search: Rect,
@@ -341,6 +341,10 @@ pub(super) enum ClientNavigatorTarget {
         endpoint_id: ClientEndpointId,
         workspace_id: String,
     },
+    Tab {
+        endpoint_id: ClientEndpointId,
+        tab_id: String,
+    },
     Pane {
         endpoint_id: ClientEndpointId,
         pane_id: String,
@@ -365,6 +369,8 @@ pub(super) struct ClientNavigatorOverlay {
     pub(super) query: TextEditor,
     pub(super) search_focused: bool,
     pub(super) selected: Option<ClientNavigatorTarget>,
+    /// Row index of the last selection; picks one row when rows repeat the `selected` target.
+    pub(super) selected_row: usize,
     pub(super) scroll: usize,
     pub(super) filter: Option<ClientNavigatorFilter>,
 }

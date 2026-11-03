@@ -953,11 +953,11 @@ fn navigator_workspace_headings_use_the_active_themes_primary_text() {
     ] {
         state.config.palette = palette;
         let frame = state.compose(106, 30).expect("navigator");
-        let (rect, _) = state
+        let (rect, _, _) = state
             .hits
             .navigator_rows
             .iter()
-            .find(|(_, target)| matches!(target, ClientNavigatorTarget::Workspace { .. }))
+            .find(|(_, target, _)| matches!(target, ClientNavigatorTarget::Workspace { .. }))
             .expect("workspace heading");
         let position = cell_symbol_position(&frame, *rect, "client-shell");
         let buffer = frame.to_ratatui_buffer().expect("buffer");
@@ -1019,7 +1019,7 @@ fn navigator_renders_every_terminal_in_workspace_sections() {
             .hits
             .navigator_rows
             .iter()
-            .map(|(rect, _)| {
+            .map(|(rect, _, _)| {
                 frame.cells[rect.y as usize * frame.width as usize + rect.x as usize..]
                     .iter()
                     .take(rect.width as usize)
@@ -1029,11 +1029,19 @@ fn navigator_renders_every_terminal_in_workspace_sections() {
             .collect::<Vec<_>>()
     };
     let visible = visible_rows(&mut state, 30);
-    assert_eq!(visible.len(), 7);
-    for (row, prefix) in visible
-        .iter()
-        .zip([" client", " ├─ ", " ├─ ", " ├─ ", " └─ ", " second", " └─ "])
-    {
+    assert_eq!(visible.len(), 10);
+    for (row, prefix) in visible.iter().zip([
+        " client",
+        "   editor",
+        "   ├─ ",
+        "   └─ ",
+        "   notes",
+        "   └─ ",
+        "   logs",
+        "   └─ ",
+        " second",
+        " └─ ",
+    ]) {
         assert!(
             row.starts_with(prefix),
             "{row:?} should start with {prefix:?}"
@@ -1041,9 +1049,12 @@ fn navigator_renders_every_terminal_in_workspace_sections() {
     }
     for (row, label) in visible.iter().zip([
         "client-shell",
+        "editor",
         "editor · agent · 1",
         "editor · shell · 2",
         "notes",
+        "notes",
+        "logs",
         "logs",
         "second",
         "agent",
@@ -1064,8 +1075,8 @@ fn navigator_renders_every_terminal_in_workspace_sections() {
     let visible = visible_rows(&mut state, 11);
     assert_eq!(visible.len(), 2);
     assert!(visible.iter().any(|row| row.contains("editor · shell · 2")));
-    assert!(visible[0].starts_with(" ├─ "));
-    assert!(visible[1].starts_with(" ├─ "));
+    assert!(visible[0].starts_with("   ├─ "));
+    assert!(visible[1].starts_with("   └─ "));
 
     // Filtering retains the section and the exact split destination.
     let Some(ClientShellOverlay::Navigator(navigator)) = state.overlay.as_mut() else {
@@ -1074,8 +1085,9 @@ fn navigator_renders_every_terminal_in_workspace_sections() {
     navigator.query = "pane_shell".into();
     navigator.scroll = 0;
     let visible = visible_rows(&mut state, 30);
-    assert_eq!(visible.len(), 2);
-    assert!(visible[1].starts_with(" └─ "));
+    assert_eq!(visible.len(), 3);
+    assert!(visible[1].starts_with("   editor"));
+    assert!(visible[2].starts_with("   └─ "));
     assert!(visible.iter().any(|row| row.contains("editor · shell · 2")));
     assert!(visible.iter().all(|row| !row.contains("second")));
 }
@@ -1214,10 +1226,10 @@ fn navigator_searches_ancestor_context_and_keeps_split_agents_individually_actio
         .hits
         .navigator_rows
         .iter()
-        .filter(|(_, target)| matches!(target, ClientNavigatorTarget::Pane { .. }))
+        .filter(|(_, target, _)| matches!(target, ClientNavigatorTarget::Pane { .. }))
         .collect::<Vec<_>>();
     assert_eq!(pane_rows.len(), 2);
-    for ((rect, _), (name, kind, status)) in pane_rows.iter().zip([
+    for ((rect, _, _), (name, kind, status)) in pane_rows.iter().zip([
         ("writer", "pi", "working"),
         ("reviewer", "claude", "blocked"),
     ]) {
@@ -1370,6 +1382,7 @@ fn navigator_horizontal_arrows_jump_sections_but_edit_the_search_cursor() {
             pane_id: id.into(),
         })
     };
+    press(&mut state, KeyCode::Esc);
     press(&mut state, KeyCode::Left);
     assert_eq!(selected(&state), target("pane_1"));
     press(&mut state, KeyCode::Right);
@@ -1434,7 +1447,7 @@ fn navigator_scrollbar_click_and_drag_scroll_without_opening_a_destination() {
         .hits
         .navigator_rows
         .iter()
-        .all(|(rect, _)| rect.right() == track.x));
+        .all(|(rect, _, _)| rect.right() == track.x));
     let buffer = frame.to_ratatui_buffer().expect("buffer");
     assert_eq!(buffer[(track.x, track.y)].fg, state.config.palette.overlay1);
     assert_eq!(
@@ -1468,7 +1481,7 @@ fn navigator_scrollbar_click_and_drag_scroll_without_opening_a_destination() {
             .offset_from_bottom,
         0
     );
-    assert!(state.hits.navigator_rows.iter().any(|(_, target)| matches!(target, ClientNavigatorTarget::Pane { pane_id, .. } if pane_id == "pane_60")));
+    assert!(state.hits.navigator_rows.iter().any(|(_, target, _)| matches!(target, ClientNavigatorTarget::Pane { pane_id, .. } if pane_id == "pane_60")));
     mouse(&mut state, MouseEventKind::Down(MouseButton::Left), track.y);
     state.compose(106, 24).expect("jump back to top");
     assert_eq!(
@@ -1570,7 +1583,11 @@ fn navigator_narrow_layout_and_long_search_stay_inside_the_popup() {
     }
 }
 
-fn navigator_scale_snapshot(workspaces: usize, tabs: usize, panes: usize) -> ClientShellSnapshot {
+pub(super) fn navigator_scale_snapshot(
+    workspaces: usize,
+    tabs: usize,
+    panes: usize,
+) -> ClientShellSnapshot {
     let mut result = snapshot();
     let workspace_template = result.workspaces[0].clone();
     let tab_template = result.tabs[0].clone();
@@ -1661,7 +1678,6 @@ fn navigator_rows_build_count() {
             KeyModifiers::empty(),
         ))]);
     };
-    press(&mut state, KeyCode::Char('/'));
     take_navigator_rows_builds();
 
     press(&mut state, KeyCode::Char('a'));
@@ -1888,8 +1904,8 @@ fn navigator_owns_search_mouse_selection_and_stable_target_focus() {
         .hits
         .navigator_rows
         .iter()
-        .find(|(_, target)| *target == pane_target)
-        .map(|(rect, _)| *rect)
+        .find(|(_, target, _)| *target == pane_target)
+        .map(|(rect, _, _)| *rect)
         .expect("visible pane row");
     let select =
         state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {

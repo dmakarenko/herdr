@@ -1646,15 +1646,16 @@ impl ClientShellState {
                 .hits
                 .navigator_rows
                 .iter()
-                .find(|(rect, _)| super::contains(*rect, point))
+                .find(|(rect, _, _)| super::contains(*rect, point))
                 .cloned();
             match mouse.kind {
                 MouseEventKind::Moved => {
-                    if let Some((_, target)) = row_hit {
+                    if let Some((_, target, row)) = row_hit {
                         if let Some(ClientShellOverlay::Navigator(navigator)) =
                             self.overlay.as_mut()
                         {
                             navigator.selected = Some(target);
+                            navigator.selected_row = row;
                         }
                         outcome.repaint = true;
                     }
@@ -1690,11 +1691,12 @@ impl ClientShellState {
                             navigator.filter = None;
                         }
                         outcome.repaint = true;
-                    } else if let Some((_, target)) = row_hit {
+                    } else if let Some((_, target, row)) = row_hit {
                         if let Some(ClientShellOverlay::Navigator(navigator)) =
                             self.overlay.as_mut()
                         {
                             navigator.selected = Some(target);
+                            navigator.selected_row = row;
                         }
                         self.accept_navigator_selection(outcome);
                     } else if !super::contains(self.hits.navigator_popup, point) {

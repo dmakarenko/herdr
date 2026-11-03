@@ -12,7 +12,7 @@ pub(crate) struct OverlayRender {
     pub(crate) cancel: Rect,
     pub(crate) navigator_popup: Rect,
     pub(crate) navigator_search: Rect,
-    pub(crate) navigator_rows: Vec<(Rect, ClientNavigatorTarget)>,
+    pub(crate) navigator_rows: Vec<(Rect, ClientNavigatorTarget, usize)>,
     pub(crate) navigator_scrollbar: Rect,
     pub(crate) navigator_scroll_metrics: Option<crate::pane::ScrollMetrics>,
     pub(crate) worktree_search: Rect,
@@ -834,7 +834,7 @@ fn render_navigator_overlay(
         .take(body.height as usize)
     {
         let rect = Rect::new(body.x, body.y + (ix - scroll) as u16, row_width, 1);
-        row_hits.push((rect, r.target.clone()));
+        row_hits.push((rect, r.target.clone(), ix));
         let st = if r.stale {
             Style::default()
                 .fg(p.overlay0)
@@ -878,7 +878,7 @@ fn render_navigator_overlay(
         let status = r.status.map(status_dot).unwrap_or_default();
         let status_separator = if status.is_empty() { "" } else { " " };
         let label = format!("{indent}{current}{status}{status_separator}{}", r.label);
-        let st = if r.status.is_none() {
+        let st = if r.status.is_none() && !matches!(r.target, ClientNavigatorTarget::Tab { .. }) {
             st.add_modifier(Modifier::BOLD)
         } else {
             st
